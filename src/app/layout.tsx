@@ -1,7 +1,14 @@
 import type { Metadata, Viewport } from "next";
+import { Vazirmatn } from "next/font/google";
 import Script from "next/script";
 import { Providers } from "@/components/layout/providers";
 import "./globals.css";
+
+const vazirmatn = Vazirmatn({
+  subsets: ["arabic", "latin"],
+  variable: "--font-vazirmatn",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "DongBot — دانگ‌بات",
@@ -31,8 +38,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fa" suppressHydrationWarning>
-      <body className="antialiased">
+    <html lang="fa" className={vazirmatn.variable} suppressHydrationWarning>
+      <body className={`${vazirmatn.className} antialiased`}>
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
