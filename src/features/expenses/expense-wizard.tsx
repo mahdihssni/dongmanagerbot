@@ -205,21 +205,26 @@ export function ExpenseWizard({
       clientRequestId: requestId,
     };
 
-    if (existing) {
-      updateExpense(existing.id, payload);
-      haptic("success", hapticsOn);
-      router.push(`/groups/${groupId}/expenses`);
-      return;
-    }
+    try {
+      if (existing) {
+        await updateExpense(existing.id, payload);
+        haptic("success", hapticsOn);
+        router.push(`/groups/${groupId}/expenses`);
+        return;
+      }
 
-    const result = addExpense(payload);
-    if (!result) {
-      setError(t("duplicateBlocked"));
+      const result = await addExpense(payload);
+      if (!result) {
+        setError(t("duplicateBlocked"));
+        setSubmitting(false);
+        return;
+      }
+      haptic("success", hapticsOn);
+      router.push(`/groups/${groupId}`);
+    } catch {
+      setError(t("errorGeneric"));
       setSubmitting(false);
-      return;
     }
-    haptic("success", hapticsOn);
-    router.push(`/groups/${groupId}`);
   };
 
   const setShareValue = (memberId: string, value: number) => {

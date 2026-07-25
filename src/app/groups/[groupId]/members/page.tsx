@@ -34,10 +34,15 @@ export default function MembersPage() {
   const onRemove = async (memberId: string) => {
     const ok = await confirmDestructive(t("confirmDeleteMember"));
     if (!ok) return;
-    deactivateMember(memberId);
-    haptic("success");
-    setToast(t("deleted"));
-    setTimeout(() => setToast(null), 1200);
+    try {
+      await deactivateMember(memberId);
+      haptic("success");
+      setToast(t("deleted"));
+      setTimeout(() => setToast(null), 1200);
+    } catch {
+      setToast(t("errorGeneric"));
+      setTimeout(() => setToast(null), 1600);
+    }
   };
 
   const memberSource = (m: (typeof members)[0]) =>

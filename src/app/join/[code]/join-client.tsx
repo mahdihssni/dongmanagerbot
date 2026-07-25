@@ -22,17 +22,26 @@ export default function JoinInvitePage() {
 
   useEffect(() => {
     if (!hydrated) return;
+    let cancelled = false;
     const shell = {
       groupId: search.get("gid") ?? "",
       name: search.get("n") ?? "",
       currency: parseCurrencyCode(search.get("c")),
     };
     const hasShell = Boolean(shell.groupId && shell.name);
-    const next = joinViaInvite(params.code, hasShell ? shell : null);
-    setResult(next);
-    if (next.status === "joined" || next.status === "already_member") {
-      haptic("success", state.settings.hapticFeedback);
-    }
+
+    void (async () => {
+      const next = await joinViaInvite(params.code, hasShell ? shell : null);
+      if (cancelled) return;
+      setResult(next);
+      if (next.status === "joined" || next.status === "already_member") {
+        haptic("success", state.settings.hapticFeedback);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [hydrated, joinViaInvite, params.code, search, state.settings.hapticFeedback]);
 
   return (

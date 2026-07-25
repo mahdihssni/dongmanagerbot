@@ -8,18 +8,26 @@ This repository is the **frontend Mini App**, not a bot webhook server. The bot 
 
 ```
 src/
-  app/                 # Screens (App Router)
+  app/                 # Screens + API routes
   components/          # UI primitives + shell
-  features/            # Multi-step flows (expense wizard)
-  domain/              # Types + pure helpers (User, Group, Member, Expense…)
+  features/            # Multi-step flows (expense wizard, invites)
+  domain/              # Types + pure helpers
   engine/              # Calculation: money, splits, balances, settlement
-  lib/telegram/        # WebApp SDK helpers + local-dev fallback
+  lib/db/              # MongoDB client + collections
+  lib/auth/            # Telegram initData HMAC validation
+  lib/services/        # Server use-cases (groups/members/expenses/invites)
+  lib/telegram/        # WebApp SDK helpers
   lib/i18n/            # fa / en copy
-  lib/persistence/     # localStorage now, ApiRepository later
+  lib/persistence/     # localStorage cache + remote API client
   store/               # React context app state
 ```
 
-**Domain / UI separation:** screens and components never compute balances themselves beyond calling pure engine functions. Persistence is behind a repository interface so you can swap `localStorage` for an API without rewriting UX.
+**Persistence modes**
+
+- If `MONGODB_URI` is set → MongoDB is the source of truth; the client talks to `/api/*` with Telegram `initData`.
+- If unset → full localStorage mode (single-device / offline demos).
+
+Balances/settlement stay pure client-side from fetched expenses.
 
 ### Data model (simplified)
 
@@ -42,37 +50,55 @@ Balances are deterministic integers. Settlement uses a greedy largest-debtor →
 
 ```bash
 cp .env.example .env.local
-npm install
-npm run dev
+yarn
+yarn dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Without Telegram, the app runs in **local development mode** with a demo user and an empty workspace. Theme falls back to CSS defaults.
+Without Telegram / MongoDB, the app runs in **local development mode** with a demo user and localStorage. Theme falls back to CSS defaults.
 
 ### Environment variables
 
-| Variable | Purpose |
-|----------|---------|
-| `NEXT_PUBLIC_APP_URL` | Public HTTPS URL of the Mini App (used when configuring the bot) |
-| `NEXT_PUBLIC_APP_ENV` | `development` / `production` |
-| `NEXT_PUBLIC_API_BASE_URL` | Optional future backend base URL |
+| Variable | Where | Purpose |
+|----------|--------|---------|
+| `NEXT_PUBLIC_APP_URL` | Public | Mini App HTTPS URL |
+| `NEXT_PUBLIC_APP_ENV` | Public | `development` / `production` |
+| `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Public | Invite deep links |
+| `NEXT_PUBLIC_TELEGRAM_APP_SHORT_NAME` | Public | Optional Direct Link app name |
+| `NEXT_PUBLIC_ALLOW_DEV_AUTH` | Public | Browser sends `x-dev-user` (dev only) |
+| `MONGODB_URI` | Server | Atlas connection string |
+| `MONGODB_DB` | Server | DB name (default `dongbot`) |
+| `TELEGRAM_BOT_TOKEN` | Server | Validate WebApp `initData` (never expose) |
+| `ALLOW_DEV_AUTH` | Server | Accept `x-dev-user` when token/initData missing |
+
+## MongoDB Atlas (free) + Vercel
+
+1. Create a free **M0** cluster on [MongoDB Atlas](https://www.mongodb.com/atlas).
+2. Create a DB user and allow network access (`0.0.0.0/0` for Vercel, or Atlas VPC later).
+3. Copy the `mongodb+srv://…` URI into Vercel / `.env.local` as `MONGODB_URI`.
+4. Set `TELEGRAM_BOT_TOKEN` from BotFather.
+5. Redeploy. Check `GET /api/health` → `mongoConfigured: true`, `mongoConnected: true`.
+
+With Mongo enabled, invites resolve by `inviteCode` on the server — friends joining via `startapp=j_<code>` share the same group.
 
 ## Scripts
 
 ```bash
-npm run dev      # local Next.js
-npm run build    # production build
-npm run start    # serve build
-npm test         # vitest — engine / settlement
-npm run lint
+yarn dev
+yarn build
+yarn start
+yarn test
+yarn typecheck
+yarn lint
+yarn ci
 ```
 
 ## Deploy to Vercel
 
 1. Push this repo to GitHub.
 2. Import the project in [Vercel](https://vercel.com).
-3. Set `NEXT_PUBLIC_APP_URL` to your production URL (e.g. `https://dongbot.vercel.app`).
+3. Set env vars (`NEXT_PUBLIC_APP_URL`, `MONGODB_URI`, `TELEGRAM_BOT_TOKEN`, bot username).
 4. Deploy. Framework preset: **Next.js**.
 
 Health check: `GET /api/health`.
@@ -94,7 +120,7 @@ Set in `.env`:
 
 Primary UX: **Invite friends** on the Members screen. Manual name add is a collapsed fallback.
 
-When a friend opens the link, `start_param` is consumed and they are added with their Telegram profile name. Web join URLs under `/join/<code>` can also carry a small group shell (`gid`, `n`, `c`) so local-first demos work before a backend exists.
+When a friend opens the link, `start_param` is consumed and they join via `POST /api/invites/:code` (Mongo mode) or local shell params (localStorage mode).
 
 ## Connect to a Telegram bot
 
@@ -169,11 +195,11 @@ The Mini App loads `telegram-web-app.js`, calls `WebApp.ready()` / `expand()`, r
 | equal | مساوی | Equal |
 | noGroups | هنوز گروهی نساخته‌اید | No groups yet |
 
-## Future backend
+## Future backend notes
 
-1. Implement `ApiRepository` (`src/lib/persistence/api-repository.ts`).
-2. Validate Telegram `initData` on the server (HMAC) before mutating data.
-3. Keep `src/engine/*` as the shared calculation source of truth.
+- Init-data HMAC lives in `src/lib/auth/telegram.ts` (server only).
+- Keep `src/engine/*` as the shared calculation source of truth.
+- Resource APIs already cover me / groups / members / expenses / invites.
 
 ## Production checklist
 
@@ -197,9 +223,11 @@ Before going live on Vercel:
 - CI workflow (`.github/workflows/ci.yml`)
 - Init-data HMAC validation notes for a future server route (`src/lib/telegram/validate-init-data.ts`)
 
-### Still requires a backend for full multi-user sync
+### Still optional / next steps
 
-Telegram `startapp` invites and true cross-device group state need a server that stores groups and validates `initData`. Until then, web join URLs with a group shell are the local-first join path.
+- Automated migration of old localStorage data into Mongo
+- Real-time multi-tab sync
+- Stricter production CSP if you drop inline styles
 
 ## License
 

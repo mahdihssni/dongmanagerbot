@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
 import {
-  buildPreferredInviteUrl,
-  buildWebInviteUrl,
+  buildTelegramInviteUrl,
+  buildWebInviteUrlWithShell,
   copyGroupInviteLink,
   getBotUsername,
   shareGroupInvite,
@@ -24,12 +24,14 @@ export function InviteMembersPanel({
   onToast: (message: string) => void;
 }) {
   const t = useT();
-  const { addMember, state } = useAppStore();
+  const { addMember, state, remoteMode } = useAppStore();
   const [showManual, setShowManual] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const inviteUrl = buildPreferredInviteUrl(group);
-  const webUrl = buildWebInviteUrl(group);
+  const inviteUrl = getBotUsername()
+    ? buildTelegramInviteUrl(group)
+    : buildWebInviteUrlWithShell(group);
+  const webUrl = buildWebInviteUrlWithShell(group);
   const botMissing = !getBotUsername();
 
   const onShare = async () => {
@@ -44,17 +46,21 @@ export function InviteMembersPanel({
     onToast(t("inviteLinkCopied"));
   };
 
-  const onManualAdd = (e: React.FormEvent) => {
+  const onManualAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setError(t("requiredField"));
       return;
     }
-    addMember(group.id, name.trim());
-    setName("");
-    setError(null);
-    haptic("success");
-    onToast(t("saved"));
+    try {
+      await addMember(group.id, name.trim());
+      setName("");
+      setError(null);
+      haptic("success");
+      onToast(t("saved"));
+    } catch {
+      setError(t("errorGeneric"));
+    }
   };
 
   return (
@@ -67,6 +73,11 @@ export function InviteMembersPanel({
         {botMissing ? (
           <p className="text-xs text-amber-700 dark:text-amber-300">
             {t("botUsernameMissing")}
+          </p>
+        ) : null}
+        {remoteMode ? (
+          <p className="text-xs text-emerald-700 dark:text-emerald-300">
+            Cloud sync on — friends join via invite code on the server.
           </p>
         ) : null}
         <p className="break-all rounded-xl bg-[var(--tg-bg)] px-3 py-2 text-xs text-[var(--tg-hint)]">

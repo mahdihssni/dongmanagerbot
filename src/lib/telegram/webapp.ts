@@ -123,6 +123,10 @@ export function isTelegramEnvironment(): boolean {
   return Boolean(wa && (wa.initData || wa.initDataUnsafe?.user));
 }
 
+export function readTelegramInitData(): string {
+  return getTelegramWebApp()?.initData || "";
+}
+
 export function readTelegramUser(): TelegramUser | null {
   return getTelegramWebApp()?.initDataUnsafe?.user ?? null;
 }

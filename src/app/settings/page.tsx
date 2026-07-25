@@ -11,7 +11,7 @@ import { getConfigWarnings } from "@/lib/config";
 
 export default function SettingsPage() {
   const t = useT();
-  const { state, setLocale, clearAll, isDevMode } = useAppStore();
+  const { state, setLocale, clearAll, isDevMode, remoteMode } = useAppStore();
   const warnings = isDevMode ? getConfigWarnings() : [];
 
   return (
@@ -19,12 +19,23 @@ export default function SettingsPage() {
       <PageHeader title={t("settings")} backHref="/" />
       <div className="flex flex-col gap-4 px-4 py-4">
         <Card>
+          <p className="mb-1 text-sm font-medium">
+            {remoteMode ? "Cloud sync (MongoDB)" : t("localDevMode")}
+          </p>
+          <p className="text-xs text-[var(--tg-hint)]">
+            {remoteMode
+              ? "Groups and expenses sync through the server."
+              : t("telegramMissing")}
+          </p>
+        </Card>
+
+        <Card>
           <p className="mb-3 text-sm font-medium">{t("language")}</p>
           <div className="flex gap-2">
             <Chip
               selected={state.settings.locale === "fa"}
               onClick={() => {
-                setLocale("fa");
+                void setLocale("fa");
                 haptic("selection", state.settings.hapticFeedback);
               }}
             >
@@ -33,7 +44,7 @@ export default function SettingsPage() {
             <Chip
               selected={state.settings.locale === "en"}
               onClick={() => {
-                setLocale("en");
+                void setLocale("en");
                 haptic("selection", state.settings.hapticFeedback);
               }}
             >

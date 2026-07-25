@@ -37,22 +37,23 @@ export function InviteBootstrap() {
     }
 
     const shell = readInviteShellFromUrl();
-    const result = joinViaInvite(code, shell);
-    const hapticsOn = state.settings.hapticFeedback;
+    void (async () => {
+      const result = await joinViaInvite(code, shell);
+      const hapticsOn = state.settings.hapticFeedback;
 
-    if (result.status === "joined" || result.status === "already_member") {
-      try {
-        sessionStorage.setItem(HANDLED_KEY, code);
-      } catch {
-        /* ignore */
+      if (result.status === "joined" || result.status === "already_member") {
+        try {
+          sessionStorage.setItem(HANDLED_KEY, code);
+        } catch {
+          /* ignore */
+        }
+        haptic("success", hapticsOn);
+        router.replace(`/groups/${result.group.id}`);
+        return;
       }
-      haptic("success", hapticsOn);
-      router.replace(`/groups/${result.group.id}`);
-      return;
-    }
 
-    // Only mark handled on success so a missing shell can retry with full URL.
-    router.replace(`/join/${encodeURIComponent(code)}${window.location.search}`);
+      router.replace(`/join/${encodeURIComponent(code)}${window.location.search}`);
+    })();
   }, [hydrated, joinViaInvite, pathname, router, state.settings.hapticFeedback]);
 
   return null;

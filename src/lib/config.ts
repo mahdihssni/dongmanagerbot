@@ -42,3 +42,7 @@ export function getConfigWarnings(): string[] {
   }
   return warnings;
 }
+
+export function isServerMongoEnabled(): boolean {
+  return Boolean(process.env.MONGODB_URI);
+}

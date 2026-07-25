@@ -38,8 +38,12 @@ export default function SettlePage() {
   const name = (id: string) =>
     state.members.find((m) => m.id === id)?.displayName ?? "—";
 
-  const recordTransfer = (fromMemberId: string, toMemberId: string, amount: number) => {
-    addExpense({
+  const recordTransfer = async (
+    fromMemberId: string,
+    toMemberId: string,
+    amount: number,
+  ) => {
+    await addExpense({
       groupId: group.id,
       description: `${t("transfer")}: ${name(fromMemberId)} → ${name(toMemberId)}`,
       amount,
@@ -57,9 +61,9 @@ export default function SettlePage() {
     setTimeout(() => setToast(null), 1500);
   };
 
-  const recordAll = () => {
+  const recordAll = async () => {
     for (const s of suggestions) {
-      recordTransfer(s.fromMemberId, s.toMemberId, s.amount);
+      await recordTransfer(s.fromMemberId, s.toMemberId, s.amount);
     }
     setTimeout(() => router.push(`/groups/${group.id}/balances`), 600);
   };

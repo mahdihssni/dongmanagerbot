@@ -1,5 +1,6 @@
 import type { CurrencyCode, Group } from "@/domain/types";
 import { getPublicConfig, parseCurrencyCode } from "@/lib/config";
+import { createInviteCode } from "@/lib/ids";
 import {
   getTelegramWebApp,
   isTelegramEnvironment,
@@ -9,18 +10,7 @@ import {
 const INVITE_PREFIX = "j_";
 const GROUP_ID_RE = /^[a-zA-Z0-9_-]{6,80}$/;
 
-export function createInviteCode(): string {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let out = "";
-  const bytes =
-    typeof crypto !== "undefined" && crypto.getRandomValues
-      ? crypto.getRandomValues(new Uint8Array(8))
-      : Array.from({ length: 8 }, () => Math.floor(Math.random() * 256));
-  for (let i = 0; i < 8; i += 1) {
-    out += alphabet[(bytes[i] as number) % alphabet.length];
-  }
-  return out;
-}
+export { createInviteCode };
 
 export function toStartParam(inviteCode: string): string {
   return `${INVITE_PREFIX}${inviteCode}`;
@@ -89,8 +79,13 @@ export function getPublicAppUrl(): string {
 }
 
 export function buildWebInviteUrl(group: Group): string {
-  const code = group.inviteCode;
-  const url = new URL(`${getPublicAppUrl()}/join/${code}`);
+  // Server-backed join resolves by inviteCode alone; no shell query needed.
+  return `${getPublicAppUrl()}/join/${group.inviteCode}`;
+}
+
+/** Local-only fallback shell URL when MongoDB is not configured. */
+export function buildWebInviteUrlWithShell(group: Group): string {
+  const url = new URL(`${getPublicAppUrl()}/join/${group.inviteCode}`);
   url.searchParams.set("gid", group.id);
   url.searchParams.set("n", group.name);
   url.searchParams.set("c", group.currency);
@@ -113,26 +108,13 @@ export function buildInviteShareText(groupName: string, locale: "fa" | "en"): st
     : `Join “${groupName}” on DongBot — let's split expenses together`;
 }
 
-/**
- * Prefer the Telegram deep link when a bot username is configured;
- * otherwise share the web join URL (includes a group shell for local-first join).
- */
-export function buildPreferredInviteUrl(group: Group): string {
-  return getBotUsername() ? buildTelegramInviteUrl(group) : buildWebInviteUrl(group);
-}
-
-/**
- * Share invite via Telegram (preferred) or Web Share / clipboard fallback.
- * The shared URL always includes a web join fallback with group shell params
- * so friends can join before a backend exists.
- */
 export async function shareGroupInvite(
   group: Group,
   locale: "fa" | "en",
 ): Promise<"telegram" | "native" | "clipboard"> {
-  const webUrl = buildWebInviteUrl(group);
+  // Prefer Telegram deep link; web URL includes shell for local-mode fallback.
+  const webUrl = buildWebInviteUrlWithShell(group);
   const tgUrl = getBotUsername() ? buildTelegramInviteUrl(group) : null;
-  // Share Telegram deep link when available; append web fallback in the text.
   const inviteUrl = tgUrl ?? webUrl;
   const text = tgUrl
     ? `${buildInviteShareText(group.name, locale)}\n${webUrl}`
@@ -149,7 +131,7 @@ export async function shareGroupInvite(
       await navigator.share({ title: group.name, text, url: inviteUrl });
       return "native";
     } catch {
-      /* user cancelled or unsupported — fall through */
+      /* cancelled */
     }
   }
 
@@ -158,9 +140,9 @@ export async function shareGroupInvite(
 }
 
 export async function copyGroupInviteLink(group: Group): Promise<string> {
-  const inviteUrl = buildPreferredInviteUrl(group);
-  const webUrl = buildWebInviteUrl(group);
-  const payload = inviteUrl === webUrl ? inviteUrl : `${inviteUrl}\n${webUrl}`;
+  const tgUrl = getBotUsername() ? buildTelegramInviteUrl(group) : null;
+  const webUrl = buildWebInviteUrlWithShell(group);
+  const payload = tgUrl ? `${tgUrl}\n${webUrl}` : webUrl;
   await navigator.clipboard.writeText(payload);
   return payload;
 }

@@ -23,15 +23,19 @@ export default function CreateGroupPage() {
   const [memberName, setMemberName] = useState(state.currentUser?.firstName ?? "");
   const [error, setError] = useState<string | null>(null);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setError(t("requiredField"));
       return;
     }
-    const group = createGroup(name, currency, memberName || undefined);
-    haptic("success");
-    router.replace(`/groups/${group.id}`);
+    try {
+      const group = await createGroup(name, currency, memberName || undefined);
+      haptic("success");
+      router.replace(`/groups/${group.id}`);
+    } catch {
+      setError(t("errorGeneric"));
+    }
   };
 
   return (

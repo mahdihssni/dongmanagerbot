@@ -10,7 +10,7 @@ import type {
   SplitType,
   User,
 } from "@/domain/types";
-import { createInviteCode } from "@/lib/telegram/invite";
+import { createInviteCode } from "@/lib/ids";
 import { isCurrencyCode, parseCurrencyCode } from "@/lib/config";
 
 export const STORAGE_KEY = "dongbot.v1";

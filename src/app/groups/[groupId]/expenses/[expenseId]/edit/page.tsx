@@ -35,10 +35,14 @@ export default function EditExpensePage() {
   const onDelete = async () => {
     const ok = await confirmDestructive(t("confirmDeleteExpense"));
     if (!ok) return;
-    deleteExpense(expense.id);
-    haptic("success");
-    setToast(t("deleted"));
-    setTimeout(() => router.push(`/groups/${group.id}/expenses`), 400);
+    try {
+      await deleteExpense(expense.id);
+      haptic("success");
+      setToast(t("deleted"));
+      setTimeout(() => router.push(`/groups/${group.id}/expenses`), 400);
+    } catch {
+      setToast(t("errorGeneric"));
+    }
   };
 
   return (

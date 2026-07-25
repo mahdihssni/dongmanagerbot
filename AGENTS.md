@@ -44,5 +44,6 @@ yarn ci
 ## Production notes
 
 - Prefer `yarn ci` before deploy
-- Never put the bot token in `NEXT_PUBLIC_*` — validate `initData` only on a server
+- Never put `TELEGRAM_BOT_TOKEN` or `MONGODB_URI` in `NEXT_PUBLIC_*`
+- Validate Telegram `initData` only on the server (`src/lib/auth/telegram.ts`)
 - Keep calculation logic in `src/engine` as pure functions
