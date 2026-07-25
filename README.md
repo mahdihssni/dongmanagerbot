@@ -48,7 +48,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Without Telegram, the app runs in **local development mode** with a demo user and sample group (“سفر شمال”). Theme falls back to CSS defaults.
+Without Telegram, the app runs in **local development mode** with a demo user and an empty workspace. Theme falls back to CSS defaults.
 
 ### Environment variables
 
@@ -78,6 +78,23 @@ npm run lint
 Health check: `GET /api/health`.
 
 Telegram requires **HTTPS**. Use the Vercel URL (or a custom domain).
+
+## Invite links
+
+Each group has an `inviteCode`. Sharing uses Telegram’s share sheet:
+
+```text
+https://t.me/<BOT_USERNAME>?startapp=j_<inviteCode>
+```
+
+Set in `.env`:
+
+- `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`
+- `NEXT_PUBLIC_TELEGRAM_APP_SHORT_NAME` (optional Direct Link app name)
+
+Primary UX: **Invite friends** on the Members screen. Manual name add is a collapsed fallback.
+
+When a friend opens the link, `start_param` is consumed and they are added with their Telegram profile name. Web join URLs under `/join/<code>` can also carry a small group shell (`gid`, `n`, `c`) so local-first demos work before a backend exists.
 
 ## Connect to a Telegram bot
 
@@ -158,15 +175,31 @@ The Mini App loads `telegram-web-app.js`, calls `WebApp.ready()` / `expand()`, r
 2. Validate Telegram `initData` on the server (HMAC) before mutating data.
 3. Keep `src/engine/*` as the shared calculation source of truth.
 
-## Notes / edge cases covered
+## Production checklist
 
-- Integer money + remainder distribution (no floating drift)
-- Invalid % / exact sums rejected before save
-- Payer included or excluded via participant list
-- Transfers / refunds / adjustments
-- Duplicate submit blocked via `clientRequestId`
-- Empty groups and missing Telegram init data in local dev
-- Destructive actions use Telegram `showConfirm` when available
+Before going live on Vercel:
+
+1. Set env vars: `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_APP_ENV=production`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` (+ optional app short name).
+2. Deploy over **HTTPS** and point BotFather menu / Web App button at that URL.
+3. Confirm `GET /api/health` returns `ok: true` and `botConfigured: true`.
+4. Run locally: `yarn ci` (typecheck + lint + test + build).
+5. Open the Mini App inside Telegram and verify theme, safe-area, invite share, and expense wizard.
+
+### Production hardening included
+
+- App Router `error` / `global-error` / `not-found` / `loading`
+- Security headers + CSP (Telegram script + WebView frame ancestors)
+- `robots.txt` + metadata `noindex`
+- Persistence sanitization + quota-safe saves
+- Balances skip corrupt expenses instead of crashing
+- Invite shell currency/id validation; bootstrap only marks handled on success
+- Closing confirmation while expense wizard is dirty
+- CI workflow (`.github/workflows/ci.yml`)
+- Init-data HMAC validation notes for a future server route (`src/lib/telegram/validate-init-data.ts`)
+
+### Still requires a backend for full multi-user sync
+
+Telegram `startapp` invites and true cross-device group state need a server that stores groups and validates `initData`. Until then, web join URLs with a group shell are the local-first join path.
 
 ## License
 

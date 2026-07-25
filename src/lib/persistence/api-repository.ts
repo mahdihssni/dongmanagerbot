@@ -9,27 +9,33 @@ import type { AppState } from "@/domain/types";
 export class ApiRepository implements AppRepository {
   constructor(private baseUrl: string) {}
 
+  load(): AppState | null {
+    throw new Error("Use loadAsync() for ApiRepository");
+  }
+
+  save(_state: AppState): { ok: boolean; error?: string } {
+    return { ok: false, error: "Use saveAsync() for ApiRepository" };
+  }
+
   async loadAsync(): Promise<AppState | null> {
     const res = await fetch(`${this.baseUrl}/state`, { credentials: "include" });
     if (!res.ok) return null;
     return (await res.json()) as AppState;
   }
 
-  load(): AppState | null {
-    throw new Error("Use loadAsync() for ApiRepository");
-  }
-
-  save(_state: AppState): void {
-    throw new Error("Use saveAsync() for ApiRepository");
-  }
-
-  async saveAsync(state: AppState): Promise<void> {
-    await fetch(`${this.baseUrl}/state`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(state),
-    });
+  async saveAsync(state: AppState): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await fetch(`${this.baseUrl}/state`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(state),
+      });
+      if (!res.ok) return { ok: false, error: `http_${res.status}` };
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "network" };
+    }
   }
 
   clear(): void {

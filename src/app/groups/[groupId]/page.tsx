@@ -52,12 +52,17 @@ export default function GroupDetailPage() {
           </Link>
           <Link href={`/groups/${group.id}/members`}>
             <Button variant="secondary" fullWidth>
-              {t("members")}
+              {t("inviteFriends")}
             </Button>
           </Link>
         </div>
 
         <section className="flex gap-2">
+          <Link href={`/groups/${group.id}/members`} className="flex-1">
+            <Button variant="outline" fullWidth>
+              {t("members")}
+            </Button>
+          </Link>
           <Link href={`/groups/${group.id}/expenses`} className="flex-1">
             <Button variant="outline" fullWidth>
               {t("history")}
@@ -73,10 +78,10 @@ export default function GroupDetailPage() {
         {members.length === 0 ? (
           <EmptyState
             title={t("noMembers")}
-            hint={t("emptyGroupWarn")}
+            hint={t("inviteFriendsHint")}
             action={
               <Link href={`/groups/${group.id}/members`}>
-                <Button>{t("addMember")}</Button>
+                <Button>{t("inviteFriends")}</Button>
               </Link>
             }
           />

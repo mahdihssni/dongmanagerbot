@@ -1,4 +1,4 @@
-import { computeExpenseOwes } from "@/engine/splits";
+import { computeExpenseOwes, validateSplitInput } from "@/engine/splits";
 import type { Balance, Expense, Member } from "@/domain/types";
 
 /**
@@ -6,37 +6,28 @@ import type { Balance, Expense, Member } from "@/domain/types";
  *
  * Conventions:
  * - Normal expense: payer paid `amount`; each participant owes their share.
- *   net[payer] += amount; net[participant] -= owe
- * - Transfer: payer gives cash to recipient → net[payer] += amount; net[recipient] -= amount
- *   (settles debt: if recipient was owed, this reduces what payer owes them)
- * - Refund: participant refunds payer → same as transfer from participant to payer
- *   We model: payerId = person receiving refund, participant = who pays refund
- *   → net[participant] += amount? No:
- *   Refund means money flows FROM participant TO payer (payer gets money back).
- *   net[payer] += amount; net[participant] -= amount — same as transfer where
- *   "payer" in our field is the recipient of cash. For refund we use:
- *   payerId = person being refunded (receives), participant = refunds them.
- * - Adjustment: participant owes payer `amount` extra (no cash moved yet)
- *   net[payer] += amount; net[participant] -= amount
+ * - Transfer / refund / adjustment: pairwise net adjustments.
  */
 export function applyExpenseToNets(
   nets: Record<string, number>,
   expense: Expense,
 ): void {
   const bump = (id: string, delta: number) => {
+    if (!id) return;
     nets[id] = (nets[id] ?? 0) + delta;
   };
 
   if (expense.splitType === "transfer") {
     const recipientId = expense.participantIds[0];
+    if (!recipientId) return;
     bump(expense.payerId, expense.amount);
     bump(recipientId, -expense.amount);
     return;
   }
 
   if (expense.splitType === "refund") {
-    // payer receives refund from participant
     const fromId = expense.participantIds[0];
+    if (!fromId) return;
     bump(expense.payerId, expense.amount);
     bump(fromId, -expense.amount);
     return;
@@ -44,6 +35,7 @@ export function applyExpenseToNets(
 
   if (expense.splitType === "adjustment") {
     const debtorId = expense.participantIds[0];
+    if (!debtorId) return;
     bump(expense.payerId, expense.amount);
     bump(debtorId, -expense.amount);
     return;
@@ -56,6 +48,7 @@ export function applyExpenseToNets(
   }
 }
 
+/** Skip corrupt expenses instead of crashing the balances UI. */
 export function computeBalances(
   members: Member[],
   expenses: Expense[],
@@ -75,21 +68,28 @@ export function computeBalances(
   const groupExpenses = expenses.filter((e) => e.groupId === groupId);
 
   for (const expense of groupExpenses) {
-    if (
-      expense.splitType === "transfer" ||
-      expense.splitType === "refund" ||
-      expense.splitType === "adjustment"
-    ) {
-      applyExpenseToNets(nets, expense);
-      continue;
-    }
+    try {
+      const invalid = validateSplitInput(expense);
+      if (invalid) continue;
 
-    const { owes } = computeExpenseOwes(expense);
-    paid[expense.payerId] = (paid[expense.payerId] ?? 0) + expense.amount;
-    for (const [memberId, amount] of Object.entries(owes)) {
-      owed[memberId] = (owed[memberId] ?? 0) + amount;
+      if (
+        expense.splitType === "transfer" ||
+        expense.splitType === "refund" ||
+        expense.splitType === "adjustment"
+      ) {
+        applyExpenseToNets(nets, expense);
+        continue;
+      }
+
+      const { owes } = computeExpenseOwes(expense);
+      paid[expense.payerId] = (paid[expense.payerId] ?? 0) + expense.amount;
+      for (const [memberId, amount] of Object.entries(owes)) {
+        owed[memberId] = (owed[memberId] ?? 0) + amount;
+      }
+      applyExpenseToNets(nets, expense);
+    } catch (err) {
+      console.warn("[dongbot] skipped invalid expense", expense.id, err);
     }
-    applyExpenseToNets(nets, expense);
   }
 
   return groupMembers.map((m) => ({

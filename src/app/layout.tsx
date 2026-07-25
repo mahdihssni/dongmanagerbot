@@ -14,9 +14,18 @@ export const metadata: Metadata = {
   title: "DongBot — دانگ‌بات",
   description: "Telegram Mini App for group expense splitting and dangeh calculation",
   applicationName: "DongBot",
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false },
+  },
   appleWebApp: {
     capable: true,
     title: "DongBot",
+    statusBarStyle: "default",
+  },
+  formatDetection: {
+    telephone: false,
   },
 };
 

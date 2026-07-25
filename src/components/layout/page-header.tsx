@@ -42,9 +42,12 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        "sticky top-0 z-20 flex items-start justify-between gap-3 border-b border-[var(--border)] bg-[var(--tg-bg)]/95 px-4 pb-3 pt-[max(0.75rem,var(--safe-top))] backdrop-blur",
+        "sticky top-0 z-20 flex items-start justify-between gap-3 border-b border-[var(--border)] bg-[var(--tg-bg)]/95 px-4 pb-3 backdrop-blur",
         className,
       )}
+      style={{
+        paddingTop: "max(0.75rem, calc(var(--safe-top) + 0.35rem))",
+      }}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">

@@ -36,6 +36,13 @@ export interface WebAppInitDataUnsafe {
   hash?: string;
 }
 
+export interface TelegramSafeAreaInset {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
 export interface TelegramWebApp {
   initData: string;
   initDataUnsafe: WebAppInitDataUnsafe;
@@ -49,13 +56,22 @@ export interface TelegramWebApp {
   headerColor: string;
   backgroundColor: string;
   isClosingConfirmationEnabled: boolean;
+  /** Device / system safe area (Bot API 8.0+) */
+  safeAreaInset?: TelegramSafeAreaInset;
+  /** Content insets avoiding Telegram chrome (Bot API 8.0+) */
+  contentSafeAreaInset?: TelegramSafeAreaInset;
+  isFullscreen?: boolean;
   ready: () => void;
   expand: () => void;
   close: () => void;
+  requestFullscreen?: () => void;
+  exitFullscreen?: () => void;
   enableClosingConfirmation?: () => void;
   disableClosingConfirmation?: () => void;
-  setHeaderColor?: (color: string) => void;
+  setHeaderColor?: (color: "bg_color" | "secondary_bg_color" | string) => void;
   setBackgroundColor?: (color: string) => void;
+  onEvent?: (eventType: string, callback: () => void) => void;
+  offEvent?: (eventType: string, callback: () => void) => void;
   MainButton: {
     text: string;
     color: string;
@@ -86,7 +102,9 @@ export interface TelegramWebApp {
   };
   showAlert?: (message: string, callback?: () => void) => void;
   showConfirm?: (message: string, callback?: (ok: boolean) => void) => void;
-  openLink?: (url: string) => void;
+  openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
+  openTelegramLink?: (url: string) => void;
+  switchInlineQuery?: (query: string, choose_chat_types?: Array<"users" | "groups" | "channels" | "bots">) => void;
 }
 
 declare global {
@@ -124,6 +142,35 @@ export function applyTelegramTheme(wa: TelegramWebApp): void {
   root.dataset.colorScheme = wa.colorScheme;
 }
 
+/**
+ * Sync Telegram + device safe-area insets into CSS variables.
+ * Top inset = system safe area + Telegram content chrome (header / status).
+ */
+export function applyTelegramSafeArea(wa: TelegramWebApp): void {
+  const root = document.documentElement;
+  const safe = wa.safeAreaInset;
+  const content = wa.contentSafeAreaInset;
+
+  const top = (safe?.top ?? 0) + (content?.top ?? 0);
+  const bottom = Math.max(safe?.bottom ?? 0, content?.bottom ?? 0);
+  const left = Math.max(safe?.left ?? 0, content?.left ?? 0);
+  const right = Math.max(safe?.right ?? 0, content?.right ?? 0);
+
+  root.style.setProperty("--tg-safe-top", `${top}px`);
+  root.style.setProperty("--tg-safe-bottom", `${bottom}px`);
+  root.style.setProperty("--tg-safe-left", `${left}px`);
+  root.style.setProperty("--tg-safe-right", `${right}px`);
+  root.style.setProperty(
+    "--safe-top",
+    `max(env(safe-area-inset-top, 0px), ${top}px)`,
+  );
+  root.style.setProperty(
+    "--safe-bottom",
+    `max(env(safe-area-inset-bottom, 0px), ${bottom}px)`,
+  );
+  root.dataset.tgFullscreen = wa.isFullscreen ? "1" : "0";
+}
+
 export function initTelegramApp(): TelegramWebApp | null {
   const wa = getTelegramWebApp();
   if (!wa) return null;
@@ -131,8 +178,15 @@ export function initTelegramApp(): TelegramWebApp | null {
     wa.ready();
     wa.expand();
     applyTelegramTheme(wa);
-    wa.setHeaderColor?.(wa.themeParams.bg_color || "#ffffff");
+    applyTelegramSafeArea(wa);
+    wa.setHeaderColor?.(wa.themeParams.bg_color || "bg_color");
     wa.setBackgroundColor?.(wa.themeParams.bg_color || "#ffffff");
+
+    const refreshSafeArea = () => applyTelegramSafeArea(wa);
+    wa.onEvent?.("safeAreaChanged", refreshSafeArea);
+    wa.onEvent?.("contentSafeAreaChanged", refreshSafeArea);
+    wa.onEvent?.("fullscreenChanged", refreshSafeArea);
+    wa.onEvent?.("viewportChanged", refreshSafeArea);
   } catch {
     // Local / unsupported version
   }
@@ -141,7 +195,9 @@ export function initTelegramApp(): TelegramWebApp | null {
 
 export function haptic(
   type: "light" | "success" | "error" | "selection" = "light",
+  enabled = true,
 ): void {
+  if (!enabled) return;
   const h = getTelegramWebApp()?.HapticFeedback;
   if (!h) return;
   try {
@@ -155,6 +211,43 @@ export function haptic(
 
 export function closeTelegramApp(): void {
   getTelegramWebApp()?.close();
+}
+
+export function setClosingConfirmation(enabled: boolean): void {
+  const wa = getTelegramWebApp();
+  if (!wa) return;
+  try {
+    if (enabled) wa.enableClosingConfirmation?.();
+    else wa.disableClosingConfirmation?.();
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Open a t.me / telegram.me link inside Telegram only. */
+export function openTelegramLink(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return;
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (host !== "t.me" && host !== "telegram.me" && host !== "telegram.org") {
+    console.warn("[dongbot] blocked non-Telegram link", host);
+    return;
+  }
+
+  const wa = getTelegramWebApp();
+  if (wa?.openTelegramLink) {
+    wa.openTelegramLink(url);
+    return;
+  }
+  if (wa?.openLink) {
+    wa.openLink(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 export function confirmDestructive(

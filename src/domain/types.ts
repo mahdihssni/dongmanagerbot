@@ -41,9 +41,16 @@ export interface Group {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /** Short code used in Telegram startapp invite links */
+  inviteCode: string;
   /** Soft archive — hidden from home but retained for history */
   archived?: boolean;
 }
+
+export type JoinInviteResult =
+  | { status: "joined"; group: Group; memberId: string }
+  | { status: "already_member"; group: Group; memberId: string }
+  | { status: "invalid" };
 
 export interface SplitShare {
   memberId: string;

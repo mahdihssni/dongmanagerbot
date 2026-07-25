@@ -7,10 +7,24 @@ import type {
   Group,
   Locale,
   Member,
+  SplitType,
   User,
 } from "@/domain/types";
+import { createInviteCode } from "@/lib/telegram/invite";
+import { isCurrencyCode, parseCurrencyCode } from "@/lib/config";
 
 export const STORAGE_KEY = "dongbot.v1";
+
+const SPLIT_TYPES = new Set<SplitType>([
+  "equal",
+  "exact",
+  "percentage",
+  "shares",
+  "full",
+  "transfer",
+  "refund",
+  "adjustment",
+]);
 
 export const defaultSettings = (): AppSettings => ({
   locale: "fa",
@@ -26,92 +40,6 @@ export const demoUser = (): User => ({
   languageCode: "fa",
 });
 
-export function createSampleState(user: User = demoUser()): AppState {
-  const g1 = createId("grp");
-  const mAli = createId("mem");
-  const mSara = createId("mem");
-  const mReza = createId("mem");
-  const now = nowIso();
-
-  const members: Member[] = [
-    {
-      id: mAli,
-      groupId: g1,
-      displayName: "علی",
-      userId: user.id,
-      isActive: true,
-      createdAt: now,
-    },
-    {
-      id: mSara,
-      groupId: g1,
-      displayName: "سارا",
-      isActive: true,
-      createdAt: now,
-    },
-    {
-      id: mReza,
-      groupId: g1,
-      displayName: "رضا",
-      isActive: true,
-      createdAt: now,
-    },
-  ];
-
-  const groups: Group[] = [
-    {
-      id: g1,
-      name: "سفر شمال",
-      currency: "IRT",
-      createdBy: user.id,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
-
-  const expenses: Expense[] = [
-    {
-      id: createId("exp"),
-      groupId: g1,
-      description: "ناهار رستوران",
-      amount: 1_500_000,
-      currency: "IRT",
-      payerId: mAli,
-      splitType: "equal",
-      participantIds: [mAli, mSara, mReza],
-      shares: [],
-      payerIncluded: true,
-      createdBy: user.id,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: createId("exp"),
-      groupId: g1,
-      description: "بنزین",
-      amount: 800_000,
-      currency: "IRT",
-      payerId: mSara,
-      splitType: "equal",
-      participantIds: [mAli, mSara, mReza],
-      shares: [],
-      payerIncluded: true,
-      createdBy: user.id,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
-
-  return {
-    version: DOMAIN_VERSION,
-    currentUser: user,
-    groups,
-    members,
-    expenses,
-    settings: defaultSettings(),
-  };
-}
-
 export function emptyState(user: User | null = null): AppState {
   return {
     version: DOMAIN_VERSION,
@@ -123,11 +51,122 @@ export function emptyState(user: User | null = null): AppState {
   };
 }
 
-/** Repository interface — swap localStorage for API later. */
 export interface AppRepository {
   load(): AppState | null;
-  save(state: AppState): void;
+  save(state: AppState): { ok: boolean; error?: string };
   clear(): void;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function sanitizeMember(raw: unknown): Member | null {
+  if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.groupId !== "string") {
+    return null;
+  }
+  const displayName = typeof raw.displayName === "string" ? raw.displayName.trim() : "";
+  if (!displayName) return null;
+  return {
+    id: raw.id,
+    groupId: raw.groupId,
+    displayName: displayName.slice(0, 80),
+    userId: typeof raw.userId === "string" ? raw.userId : undefined,
+    telegramId: typeof raw.telegramId === "number" ? raw.telegramId : undefined,
+    isActive: raw.isActive !== false,
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : nowIso(),
+  };
+}
+
+function sanitizeExpense(raw: unknown): Expense | null {
+  if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.groupId !== "string") {
+    return null;
+  }
+  if (typeof raw.amount !== "number" || !Number.isFinite(raw.amount) || raw.amount <= 0) {
+    return null;
+  }
+  if (typeof raw.payerId !== "string" || typeof raw.description !== "string") return null;
+  if (!SPLIT_TYPES.has(raw.splitType as SplitType)) return null;
+  if (!Array.isArray(raw.participantIds)) return null;
+  const currency = parseCurrencyCode(raw.currency);
+  return {
+    id: raw.id,
+    groupId: raw.groupId,
+    description: raw.description.trim().slice(0, 200) || "—",
+    amount: Math.round(raw.amount),
+    currency,
+    payerId: raw.payerId,
+    splitType: raw.splitType as SplitType,
+    participantIds: raw.participantIds.filter((id): id is string => typeof id === "string"),
+    shares: Array.isArray(raw.shares)
+      ? raw.shares
+          .filter(isRecord)
+          .map((s) => ({
+            memberId: String(s.memberId ?? ""),
+            value: typeof s.value === "number" && Number.isFinite(s.value) ? s.value : 0,
+          }))
+          .filter((s) => s.memberId)
+      : [],
+    payerIncluded: raw.payerIncluded !== false,
+    note: typeof raw.note === "string" ? raw.note.slice(0, 500) : undefined,
+    createdBy: typeof raw.createdBy === "string" ? raw.createdBy : "unknown",
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : nowIso(),
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : nowIso(),
+    clientRequestId:
+      typeof raw.clientRequestId === "string" ? raw.clientRequestId : undefined,
+  };
+}
+
+function sanitizeGroup(raw: unknown): Group | null {
+  if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.name !== "string") {
+    return null;
+  }
+  const name = raw.name.trim().slice(0, 80);
+  if (!name) return null;
+  return {
+    id: raw.id,
+    name,
+    currency: parseCurrencyCode(raw.currency),
+    createdBy: typeof raw.createdBy === "string" ? raw.createdBy : "unknown",
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : nowIso(),
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : nowIso(),
+    inviteCode:
+      typeof raw.inviteCode === "string" && raw.inviteCode.length >= 6
+        ? raw.inviteCode
+        : createInviteCode(),
+    archived: raw.archived === true,
+  };
+}
+
+export function migrateAppState(state: AppState): AppState {
+  const groups = (Array.isArray(state.groups) ? state.groups : [])
+    .map(sanitizeGroup)
+    .filter((g): g is Group => Boolean(g));
+  const members = (Array.isArray(state.members) ? state.members : [])
+    .map(sanitizeMember)
+    .filter((m): m is Member => Boolean(m));
+  const expenses = (Array.isArray(state.expenses) ? state.expenses : [])
+    .map(sanitizeExpense)
+    .filter((e): e is Expense => Boolean(e));
+
+  const settings: AppSettings = {
+    ...defaultSettings(),
+    ...(state.settings ?? {}),
+    locale: state.settings?.locale === "en" ? "en" : "fa",
+    currency: isCurrencyCode(state.settings?.currency)
+      ? state.settings!.currency
+      : defaultSettings().currency,
+    hapticFeedback: state.settings?.hapticFeedback !== false,
+  };
+
+  return {
+    version: DOMAIN_VERSION,
+    currentUser: state.currentUser ?? null,
+    groups,
+    members,
+    expenses,
+    settings,
+  };
 }
 
 export class LocalStorageRepository implements AppRepository {
@@ -140,20 +179,31 @@ export class LocalStorageRepository implements AppRepository {
       if (!raw) return null;
       const parsed = JSON.parse(raw) as AppState;
       if (!parsed || typeof parsed !== "object") return null;
-      return parsed;
+      return migrateAppState(parsed);
     } catch {
       return null;
     }
   }
 
-  save(state: AppState): void {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(this.key, JSON.stringify(state));
+  save(state: AppState): { ok: boolean; error?: string } {
+    if (typeof window === "undefined") return { ok: false, error: "ssr" };
+    try {
+      window.localStorage.setItem(this.key, JSON.stringify(state));
+      return { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "storage_failed";
+      console.warn("[dongbot] persistence save failed", message);
+      return { ok: false, error: message };
+    }
   }
 
   clear(): void {
     if (typeof window === "undefined") return;
-    window.localStorage.removeItem(this.key);
+    try {
+      window.localStorage.removeItem(this.key);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -165,11 +215,12 @@ export function createGroupEntity(
   const ts = nowIso();
   return {
     id: createId("grp"),
-    name: name.trim(),
-    currency,
+    name: name.trim().slice(0, 80),
+    currency: parseCurrencyCode(currency),
     createdBy,
     createdAt: ts,
     updatedAt: ts,
+    inviteCode: createInviteCode(),
   };
 }
 
@@ -181,7 +232,7 @@ export function createMemberEntity(
   return {
     id: createId("mem"),
     groupId,
-    displayName: displayName.trim(),
+    displayName: displayName.trim().slice(0, 80),
     isActive: true,
     createdAt: nowIso(),
     ...extras,
@@ -194,6 +245,9 @@ export function createExpenseEntity(
   const ts = nowIso();
   return {
     ...input,
+    description: input.description.trim().slice(0, 200),
+    amount: Math.round(input.amount),
+    currency: parseCurrencyCode(input.currency),
     id: input.id ?? createId("exp"),
     createdAt: ts,
     updatedAt: ts,

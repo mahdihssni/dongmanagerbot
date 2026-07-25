@@ -7,10 +7,12 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { closeTelegramApp, haptic } from "@/lib/telegram/webapp";
+import { getConfigWarnings } from "@/lib/config";
 
 export default function SettingsPage() {
   const t = useT();
-  const { state, setLocale, resetSample, clearAll, isDevMode } = useAppStore();
+  const { state, setLocale, clearAll, isDevMode } = useAppStore();
+  const warnings = isDevMode ? getConfigWarnings() : [];
 
   return (
     <>
@@ -23,7 +25,7 @@ export default function SettingsPage() {
               selected={state.settings.locale === "fa"}
               onClick={() => {
                 setLocale("fa");
-                haptic("selection");
+                haptic("selection", state.settings.hapticFeedback);
               }}
             >
               {t("persian")}
@@ -32,7 +34,7 @@ export default function SettingsPage() {
               selected={state.settings.locale === "en"}
               onClick={() => {
                 setLocale("en");
-                haptic("selection");
+                haptic("selection", state.settings.hapticFeedback);
               }}
             >
               {t("english")}
@@ -44,28 +46,23 @@ export default function SettingsPage() {
           <Card>
             <p className="mb-2 text-sm font-medium">{t("localDevMode")}</p>
             <p className="mb-3 text-xs text-[var(--tg-hint)]">{t("telegramMissing")}</p>
-            <div className="flex flex-col gap-2">
-              <Button
-                variant="secondary"
-                fullWidth
-                onClick={() => {
-                  resetSample();
-                  haptic("success");
-                }}
-              >
-                Reset sample data
-              </Button>
-              <Button
-                variant="outline"
-                fullWidth
-                onClick={() => {
-                  clearAll();
-                  haptic("success");
-                }}
-              >
-                Clear all data
-              </Button>
-            </div>
+            {warnings.length > 0 ? (
+              <ul className="mb-3 list-disc ps-4 text-xs text-amber-700 dark:text-amber-300">
+                {warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            ) : null}
+            <Button
+              variant="outline"
+              fullWidth
+              onClick={() => {
+                clearAll();
+                haptic("success", state.settings.hapticFeedback);
+              }}
+            >
+              {t("clearAllData")}
+            </Button>
           </Card>
         ) : null}
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   distributeProportionally,
+  formatAmountInput,
+  parseAmountInput,
   roundMoney,
   splitEqually,
 } from "@/engine/money";
@@ -269,5 +271,68 @@ describe("balances + settlement", () => {
         payerIncluded: true,
       })?.code,
     ).toBe("INVALID_AMOUNT");
+  });
+
+  it("handles refund and full split in balances", () => {
+    const expenses = [
+      baseExpense({
+        amount: 300,
+        payerId: "a",
+        splitType: "equal",
+        participantIds: ["a", "b", "c"],
+      }),
+      baseExpense({
+        id: "e2",
+        amount: 50,
+        payerId: "a",
+        splitType: "refund",
+        participantIds: ["b"],
+        description: "refund",
+      }),
+    ];
+    const balances = computeBalances(members, expenses, "g1");
+    const map = Object.fromEntries(balances.map((b) => [b.memberId, b.net]));
+    expect(map.a).toBe(250);
+    expect(map.b).toBe(-150);
+    expect(map.c).toBe(-100);
+  });
+
+  it("skips corrupt expenses instead of throwing", () => {
+    const expenses = [
+      baseExpense({
+        amount: 90,
+        payerId: "a",
+        splitType: "equal",
+        participantIds: ["a", "b", "c"],
+      }),
+      {
+        ...baseExpense({
+          id: "bad",
+          amount: 100,
+          payerId: "a",
+          splitType: "percentage",
+          participantIds: ["a", "b"],
+          shares: [
+            { memberId: "a", value: 10 },
+            { memberId: "b", value: 10 },
+          ],
+        }),
+      },
+    ];
+    expect(() => computeBalances(members, expenses, "g1")).not.toThrow();
+    const balances = computeBalances(members, expenses, "g1");
+    expect(balances.find((b) => b.memberId === "a")?.net).toBe(60);
+  });
+});
+
+describe("amount input formatting", () => {
+  it("parses Persian digits and separators", () => {
+    expect(parseAmountInput("۱٬۵۰۰٬۰۰۰", "IRT")).toBe(1_500_000);
+    expect(parseAmountInput("1,500,000", "IRT")).toBe(1_500_000);
+  });
+
+  it("formats live input with grouping", () => {
+    expect(formatAmountInput("1500000", "en")).toBe("1,500,000");
+    expect(formatAmountInput("1500000", "fa")).toContain("٬");
   });
 });

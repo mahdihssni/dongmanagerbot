@@ -17,6 +17,7 @@ import type {
   CurrencyCode,
   Expense,
   Group,
+  JoinInviteResult,
   Locale,
   Member,
   User,
@@ -26,10 +27,11 @@ import {
   createExpenseEntity,
   createGroupEntity,
   createMemberEntity,
-  createSampleState,
   demoUser,
   emptyState,
+  migrateAppState,
 } from "@/lib/persistence/repository";
+import type { InviteShellParams } from "@/lib/telegram/invite";
 import {
   initTelegramApp,
   isTelegramEnvironment,
@@ -43,13 +45,13 @@ type Action =
   | { type: "SET_CURRENCY_DEFAULT"; currency: CurrencyCode }
   | { type: "ADD_GROUP"; group: Group; members?: Member[] }
   | { type: "UPDATE_GROUP"; groupId: string; patch: Partial<Group> }
+  | { type: "UPSERT_GROUP"; group: Group }
   | { type: "ADD_MEMBER"; member: Member }
   | { type: "UPDATE_MEMBER"; memberId: string; patch: Partial<Member> }
   | { type: "DEACTIVATE_MEMBER"; memberId: string }
   | { type: "ADD_EXPENSE"; expense: Expense }
   | { type: "UPDATE_EXPENSE"; expenseId: string; patch: Partial<Expense> }
   | { type: "DELETE_EXPENSE"; expenseId: string }
-  | { type: "RESET_SAMPLE" }
   | { type: "CLEAR_ALL" };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -79,6 +81,19 @@ function reducer(state: AppState, action: Action): AppState {
             : g,
         ),
       };
+    case "UPSERT_GROUP": {
+      const exists = state.groups.some((g) => g.id === action.group.id);
+      return {
+        ...state,
+        groups: exists
+          ? state.groups.map((g) =>
+              g.id === action.group.id
+                ? { ...g, ...action.group, updatedAt: nowIso() }
+                : g,
+            )
+          : [action.group, ...state.groups],
+      };
+    }
     case "ADD_MEMBER":
       return { ...state, members: [...state.members, action.member] };
     case "UPDATE_MEMBER":
@@ -118,8 +133,6 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         expenses: state.expenses.filter((e) => e.id !== action.expenseId),
       };
-    case "RESET_SAMPLE":
-      return createSampleState(state.currentUser ?? demoUser());
     case "CLEAR_ALL":
       return emptyState(state.currentUser);
     default:
@@ -133,12 +146,15 @@ interface AppStoreValue {
   isDevMode: boolean;
   createGroup: (name: string, currency: CurrencyCode, firstMemberName?: string) => Group;
   addMember: (groupId: string, name: string) => Member;
+  joinViaInvite: (
+    inviteCode: string,
+    shell?: InviteShellParams | null,
+  ) => JoinInviteResult;
   deactivateMember: (memberId: string) => void;
   addExpense: (expense: Omit<Expense, "id" | "createdAt" | "updatedAt"> & { id?: string }) => Expense | null;
   updateExpense: (expenseId: string, patch: Partial<Expense>) => void;
   deleteExpense: (expenseId: string) => void;
   setLocale: (locale: Locale) => void;
-  resetSample: () => void;
   clearAll: () => void;
 }
 
@@ -173,25 +189,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const user = userFromTelegram();
     const loaded = repo.load();
     if (loaded) {
+      const migrated = migrateAppState(loaded);
       dispatch({
         type: "HYDRATE",
         state: {
-          ...loaded,
-          currentUser: loaded.currentUser ?? user,
+          ...migrated,
+          currentUser: migrated.currentUser ?? user,
           settings: {
-            ...loaded.settings,
+            ...migrated.settings,
             locale:
-              loaded.settings?.locale ??
-              (user.languageCode?.startsWith("fa") ? "fa" : loaded.settings?.locale || "fa"),
+              migrated.settings?.locale ??
+              (user.languageCode?.startsWith("fa") ? "fa" : migrated.settings?.locale || "fa"),
           },
         },
       });
     } else {
-      const sample = createSampleState(user);
-      if (!inTg && user.languageCode?.startsWith("en")) {
-        sample.settings.locale = "en";
+      const initial = emptyState(user);
+      if (user.languageCode?.startsWith("en")) {
+        initial.settings.locale = "en";
       }
-      dispatch({ type: "HYDRATE", state: sample });
+      dispatch({ type: "HYDRATE", state: initial });
     }
     setHydrated(true);
     persistReady.current = true;
@@ -199,7 +216,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated || !persistReady.current) return;
-    repo.save(state);
+    const result = repo.save(state);
+    if (!result.ok && result.error !== "ssr") {
+      console.warn("[dongbot] failed to persist state", result.error);
+    }
   }, [state, hydrated]);
 
   const createGroup = useCallback(
@@ -234,6 +254,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return member;
   }, []);
 
+  const joinViaInvite = useCallback(
+    (inviteCode: string, shell?: InviteShellParams | null): JoinInviteResult => {
+      const code = inviteCode.trim().toLowerCase();
+      if (!code) return { status: "invalid" };
+
+      let group = state.groups.find((g) => g.inviteCode === code);
+
+      if (!group && shell && shell.groupId) {
+        group = {
+          id: shell.groupId,
+          name: shell.name,
+          currency: shell.currency,
+          createdBy: state.currentUser?.id ?? "invite",
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+          inviteCode: code,
+        };
+        dispatch({ type: "UPSERT_GROUP", group });
+      }
+
+      if (!group) return { status: "invalid" };
+
+      const user = state.currentUser;
+      const existing = state.members.find(
+        (m) =>
+          m.groupId === group!.id &&
+          m.isActive &&
+          ((user?.telegramId && m.telegramId === user.telegramId) ||
+            (user?.id && m.userId === user.id)),
+      );
+      if (existing) {
+        return { status: "already_member", group, memberId: existing.id };
+      }
+
+      const displayName = user
+        ? [user.firstName, user.lastName].filter(Boolean).join(" ")
+        : "Member";
+      const member = createMemberEntity(group.id, displayName, {
+        userId: user?.id,
+        telegramId: user?.telegramId,
+      });
+      dispatch({ type: "ADD_MEMBER", member });
+      return { status: "joined", group, memberId: member.id };
+    },
+    [state.groups, state.members, state.currentUser],
+  );
+
   const deactivateMember = useCallback((memberId: string) => {
     dispatch({ type: "DEACTIVATE_MEMBER", memberId });
   }, []);
@@ -266,10 +333,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "SET_LOCALE", locale });
   }, []);
 
-  const resetSample = useCallback(() => {
-    dispatch({ type: "RESET_SAMPLE" });
-  }, []);
-
   const clearAll = useCallback(() => {
     dispatch({ type: "CLEAR_ALL" });
   }, []);
@@ -281,12 +344,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isDevMode,
       createGroup,
       addMember,
+      joinViaInvite,
       deactivateMember,
       addExpense,
       updateExpense,
       deleteExpense,
       setLocale,
-      resetSample,
       clearAll,
     }),
     [
@@ -295,12 +358,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isDevMode,
       createGroup,
       addMember,
+      joinViaInvite,
       deactivateMember,
       addExpense,
       updateExpense,
       deleteExpense,
       setLocale,
-      resetSample,
       clearAll,
     ],
   );

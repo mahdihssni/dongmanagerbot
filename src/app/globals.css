@@ -9,8 +9,13 @@
   --tg-secondary-bg: #f3f4f6;
   --tg-destructive: #e53935;
   --border: color-mix(in srgb, var(--tg-hint) 28%, transparent);
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Combined top inset: CSS env + Telegram safeArea/contentSafeArea (set in JS) */
+  --tg-safe-top: 0px;
+  --tg-safe-bottom: 0px;
+  --tg-safe-left: 0px;
+  --tg-safe-right: 0px;
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--tg-safe-top));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom));
   --background: var(--tg-bg);
   --foreground: var(--tg-text);
 }
@@ -59,7 +64,7 @@ body {
 }
 
 body {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px));
   overscroll-behavior-y: contain;
 }
 

@@ -10,7 +10,7 @@ export function suggestSettlements(balances: Balance[]): SettlementSuggestion[] 
   const creditors: { memberId: string; amount: number }[] = [];
 
   for (const b of balances) {
-    if (b.net < -0) {
+    if (b.net < 0) {
       debtors.push({ memberId: b.memberId, amount: -b.net });
     } else if (b.net > 0) {
       creditors.push({ memberId: b.memberId, amount: b.net });

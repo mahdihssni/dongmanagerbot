@@ -53,13 +53,57 @@ export function splitEqually(total: number, count: number): number[] {
   return distributeProportionally(total, Array(count).fill(1));
 }
 
-export function parseAmountInput(raw: string, currency: CurrencyCode): number | null {
-  const cleaned = raw
-    .replace(/[٬,]/g, "")
-    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
-    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+const FA_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
+const AR_DIGITS = "٠١٢٣٤٥٦٧٨٩";
+
+/** Normalize Persian/Arabic digits and strip grouping separators. */
+export function normalizeAmountDigits(raw: string): string {
+  return raw
+    .replace(/[۰-۹]/g, (d) => String(FA_DIGITS.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String(AR_DIGITS.indexOf(d)))
+    .replace(/[٬,\s]/g, "")
+    .replace(/٫/g, ".")
     .trim();
-  if (!cleaned) return null;
+}
+
+/**
+ * Live input formatter with thousand separators.
+ * fa → ۱٬۵۰۰٬۰۰۰  |  en → 1,500,000
+ */
+export function formatAmountInput(raw: string, locale: Locale = "fa"): string {
+  const normalized = normalizeAmountDigits(raw);
+  if (!normalized) return "";
+
+  const negative = normalized.startsWith("-");
+  const unsigned = negative ? normalized.slice(1) : normalized;
+  const [intPartRaw, ...fracParts] = unsigned.split(".");
+  const intDigits = intPartRaw.replace(/\D/g, "");
+  if (!intDigits && fracParts.length === 0) return negative ? "-" : "";
+
+  const frac = fracParts.length > 0 ? fracParts.join("").replace(/\D/g, "").slice(0, 2) : null;
+  const grouped = (intDigits || "0").replace(/\B(?=(\d{3})+(?!\d))/g, locale === "fa" ? "٬" : ",");
+
+  let display = frac !== null ? `${grouped}.${frac}` : grouped;
+  if (locale === "fa") {
+    display = display.replace(/\d/g, (d) => FA_DIGITS[Number(d)]);
+  }
+  return negative ? `-${display}` : display;
+}
+
+/** Format a stored minor-unit amount for an editable input field. */
+export function formatStoredAmountInput(
+  amount: number,
+  currency: CurrencyCode,
+  locale: Locale = "fa",
+): string {
+  const decimals = decimalsFor(currency);
+  const major = decimals === 0 ? amount : amount / Math.pow(10, decimals);
+  return formatAmountInput(String(major), locale);
+}
+
+export function parseAmountInput(raw: string, currency: CurrencyCode): number | null {
+  const cleaned = normalizeAmountDigits(raw);
+  if (!cleaned || cleaned === "." || cleaned === "-") return null;
   const num = Number(cleaned);
   if (!Number.isFinite(num) || num < 0) return null;
   const decimals = decimalsFor(currency);

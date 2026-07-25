@@ -1,18 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CurrencyCode, Expense, Member, SplitShare, SplitType } from "@/domain/types";
 import { isTransferLike } from "@/domain";
 import { computeExpenseOwes, validateSplitInput } from "@/engine/splits";
-import { formatAmount, parseAmountInput } from "@/engine/money";
+import { formatAmount, formatStoredAmountInput, parseAmountInput } from "@/engine/money";
 import { useAppStore } from "@/store/app-store";
 import { useT } from "@/lib/i18n/use-t";
 import { Button } from "@/components/ui/button";
 import { Field, Input, TextArea } from "@/components/ui/input";
+import { AmountInput } from "@/components/ui/amount-input";
 import { Chip, MemberAvatar } from "@/components/ui/chip";
 import { Card } from "@/components/ui/card";
-import { haptic } from "@/lib/telegram/webapp";
+import { haptic, setClosingConfirmation } from "@/lib/telegram/webapp";
 import { createId } from "@/domain";
 
 const SPLIT_OPTIONS: SplitType[] = [
@@ -50,7 +51,7 @@ export function ExpenseWizard({
 
   const [stepIndex, setStepIndex] = useState(0);
   const [amountRaw, setAmountRaw] = useState(
-    existing ? String(existing.amount) : "",
+    existing ? formatStoredAmountInput(existing.amount, currency, locale) : "",
   );
   const [payerId, setPayerId] = useState(existing?.payerId ?? members[0]?.id ?? "");
   const [splitType, setSplitType] = useState<SplitType>(existing?.splitType ?? "equal");
@@ -67,6 +68,18 @@ export function ExpenseWizard({
 
   const step = STEPS[stepIndex];
   const amount = parseAmountInput(amountRaw, currency);
+  const hapticsOn = state.settings.hapticFeedback;
+
+  const isDirty =
+    Boolean(amountRaw) ||
+    Boolean(description.trim()) ||
+    Boolean(note.trim()) ||
+    stepIndex > 0;
+
+  useEffect(() => {
+    setClosingConfirmation(isDirty && !submitting);
+    return () => setClosingConfirmation(false);
+  }, [isDirty, submitting]);
 
   const draft = useMemo(
     () => ({
@@ -93,7 +106,7 @@ export function ExpenseWizard({
     members.find((m) => m.id === id)?.displayName ?? id;
 
   const toggleParticipant = (id: string) => {
-    haptic("selection");
+    haptic("selection", hapticsOn);
     setParticipantIds((prev) => {
       if (isTransferLike(splitType)) return [id];
       return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
@@ -194,7 +207,7 @@ export function ExpenseWizard({
 
     if (existing) {
       updateExpense(existing.id, payload);
-      haptic("success");
+      haptic("success", hapticsOn);
       router.push(`/groups/${groupId}/expenses`);
       return;
     }
@@ -205,7 +218,7 @@ export function ExpenseWizard({
       setSubmitting(false);
       return;
     }
-    haptic("success");
+    haptic("success", hapticsOn);
     router.push(`/groups/${groupId}`);
   };
 
@@ -241,13 +254,13 @@ export function ExpenseWizard({
 
       {step === "amount" ? (
         <Field label={t("amount")} error={error ?? undefined}>
-          <Input
-            inputMode="decimal"
+          <AmountInput
             value={amountRaw}
-            onChange={(e) => setAmountRaw(e.target.value)}
-            placeholder="0"
+            onValueChange={setAmountRaw}
+            locale={locale}
+            placeholder={locale === "fa" ? "۰" : "0"}
             autoFocus
-            className="text-center text-2xl font-bold tracking-wide"
+            className="text-center text-2xl font-bold"
           />
         </Field>
       ) : null}
@@ -259,7 +272,7 @@ export function ExpenseWizard({
               key={m.id}
               type="button"
               onClick={() => {
-                haptic("selection");
+                haptic("selection", hapticsOn);
                 setPayerId(m.id);
               }}
               className={`flex items-center gap-3 rounded-xl px-3 py-3 text-start ${
@@ -283,7 +296,7 @@ export function ExpenseWizard({
               key={opt}
               selected={splitType === opt}
               onClick={() => {
-                haptic("selection");
+                haptic("selection", hapticsOn);
                 setSplitType(opt);
                 if (isTransferLike(opt)) {
                   setParticipantIds((prev) =>
@@ -364,18 +377,40 @@ export function ExpenseWizard({
             splitType === "shares") && (
             <div className="flex flex-col gap-2">
               <p className="text-sm font-medium">{t(splitType)}</p>
-              {participantIds.map((id) => (
-                <Field key={id} label={memberName(id)}>
-                  <Input
-                    inputMode="decimal"
-                    value={String(shares.find((s) => s.memberId === id)?.value ?? "")}
-                    onChange={(e) => {
-                      const n = Number(e.target.value.replace(/[^\d.]/g, ""));
-                      setShareValue(id, Number.isFinite(n) ? n : 0);
-                    }}
-                  />
-                </Field>
-              ))}
+              {participantIds.map((id) => {
+                const shareValue = shares.find((s) => s.memberId === id)?.value ?? 0;
+                if (splitType === "exact") {
+                  return (
+                    <Field key={id} label={memberName(id)}>
+                      <AmountInput
+                        value={
+                          shareValue
+                            ? formatStoredAmountInput(shareValue, currency, locale)
+                            : ""
+                        }
+                        onValueChange={(formatted) => {
+                          const parsed = parseAmountInput(formatted, currency);
+                          setShareValue(id, parsed ?? 0);
+                        }}
+                        locale={locale}
+                        placeholder={locale === "fa" ? "۰" : "0"}
+                      />
+                    </Field>
+                  );
+                }
+                return (
+                  <Field key={id} label={memberName(id)}>
+                    <Input
+                      inputMode="decimal"
+                      value={shareValue ? String(shareValue) : ""}
+                      onChange={(e) => {
+                        const n = Number(e.target.value.replace(/[^\d.]/g, ""));
+                        setShareValue(id, Number.isFinite(n) ? n : 0);
+                      }}
+                    />
+                  </Field>
+                );
+              })}
             </div>
           )}
         </div>

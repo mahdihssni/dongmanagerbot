@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { cn } from "@/lib/utils/cn";
 import { useT } from "@/lib/i18n/use-t";
 import { useAppStore } from "@/store/app-store";
@@ -12,6 +13,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { state, hydrated, isDevMode } = useAppStore();
   const rtl = isRtl(state.settings.locale);
+
+  useEffect(() => {
+    document.documentElement.lang = state.settings.locale;
+    document.documentElement.dir = rtl ? "rtl" : "ltr";
+  }, [state.settings.locale, rtl]);
 
   if (!hydrated) {
     return (
@@ -31,6 +37,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       lang={state.settings.locale}
       className="mx-auto flex min-h-dvh w-full max-w-lg flex-col bg-[var(--tg-bg)] text-[var(--tg-text)]"
     >
+      {/* Telegram / device top safe zone filler (matches body padding background) */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-x-0 top-0 z-40 mx-auto max-w-lg bg-[var(--tg-bg)]"
+        style={{ height: "var(--safe-top)" }}
+      />
       {isDevMode ? (
         <div className="bg-amber-500/15 px-3 py-1.5 text-center text-xs text-amber-800 dark:text-amber-200">
           {t("localDevMode")} — {t("telegramMissing")}

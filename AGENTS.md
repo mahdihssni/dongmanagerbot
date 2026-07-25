@@ -33,7 +33,16 @@ Stack: Next.js App Router, TypeScript, Tailwind, localStorage persistence, pure 
 ## Commands
 
 ```bash
-npm run dev
-npm test
-npm run build
+yarn dev
+yarn test
+yarn typecheck
+yarn lint
+yarn build
+yarn ci
 ```
+
+## Production notes
+
+- Prefer `yarn ci` before deploy
+- Never put the bot token in `NEXT_PUBLIC_*` — validate `initData` only on a server
+- Keep calculation logic in `src/engine` as pure functions
