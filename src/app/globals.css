@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+:root {
+  --tg-bg: #ffffff;
+  --tg-text: #111827;
+  --tg-hint: #6b7280;
+  --tg-button: #2481cc;
+  --tg-button-text: #ffffff;
+  --tg-secondary-bg: #f3f4f6;
+  --tg-destructive: #e53935;
+  --border: color-mix(in srgb, var(--tg-hint) 28%, transparent);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --background: var(--tg-bg);
+  --foreground: var(--tg-text);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Vazirmatn", "Tahoma", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tg-bg: #1c1c1e;
+    --tg-text: #f3f4f6;
+    --tg-hint: #9ca3af;
+    --tg-button: #2aabee;
+    --tg-button-text: #ffffff;
+    --tg-secondary-bg: #2c2c2e;
+    --tg-destructive: #ff6b6b;
+  }
+}
+
+html[data-color-scheme="dark"] {
+  --tg-bg: #1c1c1e;
+  --tg-text: #f3f4f6;
+  --tg-hint: #9ca3af;
+  --tg-button: #2aabee;
+  --tg-button-text: #ffffff;
+  --tg-secondary-bg: #2c2c2e;
+  --tg-destructive: #ff6b6b;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--tg-bg);
+  color: var(--tg-text);
+  font-family: var(--font-sans);
+}
+
+body {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  overscroll-behavior-y: contain;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
